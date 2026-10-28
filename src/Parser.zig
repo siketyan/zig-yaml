@@ -28,9 +28,7 @@ string_bytes: std.ArrayListUnmanaged(u8) = .empty,
 errors: ErrorBundle.Wip,
 
 pub fn init(gpa: Allocator, source: []const u8) Allocator.Error!Parser {
-    var self: Parser = .{ .source = source, .errors = undefined };
-    try self.errors.init(gpa);
-    return self;
+    return .{ .source = source, .errors = try ErrorBundle.Wip.init(gpa) };
 }
 
 pub fn deinit(self: *Parser, gpa: Allocator) void {
@@ -110,8 +108,7 @@ fn addString(self: *Parser, gpa: Allocator, string: []const u8) Allocator.Error!
 }
 
 fn addExtra(self: *Parser, gpa: Allocator, extra: anytype) Allocator.Error!u32 {
-    const fields = std.meta.fields(@TypeOf(extra));
-    try self.extra.ensureUnusedCapacity(gpa, fields.len);
+    try self.extra.ensureUnusedCapacity(gpa, @typeInfo(@TypeOf(extra)).@"struct".field_names.len);
     return self.addExtraAssumeCapacity(extra);
 }
 
@@ -121,15 +118,15 @@ fn addExtraAssumeCapacity(self: *Parser, extra: anytype) u32 {
     return result;
 }
 
-fn payloadToExtraItems(data: anytype) [@typeInfo(@TypeOf(data)).@"struct".fields.len]u32 {
-    const fields = @typeInfo(@TypeOf(data)).@"struct".fields;
-    var result: [fields.len]u32 = undefined;
-    inline for (&result, fields) |*val, field| {
-        val.* = switch (field.type) {
-            u32 => @field(data, field.name),
-            i32 => @bitCast(@field(data, field.name)),
-            Node.Index, Node.OptionalIndex, Token.Index => @intFromEnum(@field(data, field.name)),
-            else => @compileError("bad field type: " ++ @typeName(field.type)),
+fn payloadToExtraItems(data: anytype) [@typeInfo(@TypeOf(data)).@"struct".field_names.len]u32 {
+    const info = @typeInfo(@TypeOf(data)).@"struct";
+    var result: [info.field_names.len]u32 = undefined;
+    inline for (&result, info.field_names, info.field_types) |*val, name, FieldType| {
+        val.* = switch (FieldType) {
+            u32 => @field(data, name),
+            i32 => @bitCast(@field(data, name)),
+            Node.Index, Node.OptionalIndex, Token.Index => @intFromEnum(@field(data, name)),
+            else => @compileError("bad field type: " ++ @typeName(FieldType)),
         };
     }
     return result;
